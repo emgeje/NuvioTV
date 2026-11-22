@@ -6,6 +6,7 @@ import android.util.Log
 import com.nuvio.tv.core.poster.CustomPosterScreen
 import com.nuvio.tv.core.poster.patternForScreen
 import com.nuvio.tv.core.poster.withCustomPosterArt
+import com.nuvio.tv.core.profile.ProfileManager
 import com.nuvio.tv.data.local.LayoutPreferenceDataStore
 import com.nuvio.tv.domain.model.WatchProgress
 import com.nuvio.tv.ui.screens.home.ContinueWatchingItem
@@ -29,7 +30,8 @@ import kotlin.math.abs
 class TvRecommendationManager @Inject constructor(
     @ApplicationContext private val context: Context,
     private val programBuilder: ProgramBuilder,
-    private val layoutPreferenceDataStore: LayoutPreferenceDataStore
+    private val layoutPreferenceDataStore: LayoutPreferenceDataStore,
+    private val profileManager: ProfileManager
 ) {
 
     private val mutex = Mutex()
@@ -92,8 +94,16 @@ class TvRecommendationManager @Inject constructor(
         mutex.withLock {
             withContext(Dispatchers.IO) {
                 try {
+                    // A profile hidden from the launcher publishes nothing; an empty list makes
+                    // the stale-removal pass below clear whatever an earlier profile left there.
+                    val publishable = if (isHiddenFromLauncher()) {
+                        pendingWatchNext = null
+                        emptyList()
+                    } else {
+                        items
+                    }
                     val posterPattern = recommendationPosterPattern()
-                    val decorated = items.withCustomPosterArt(posterPattern)
+                    val decorated = publishable.withCustomPosterArt(posterPattern)
                     val currentInternalIds = decorated.map { programBuilder.watchNextId(it) }.toSet()
                     val existingInternalIds = programBuilder.getAllWatchNextInternalIds()
 
@@ -142,6 +152,7 @@ class TvRecommendationManager @Inject constructor(
 
     suspend fun updateSingleWatchNextProgram(progress: WatchProgress) {
         if (!isTvDevice()) return
+        if (isHiddenFromLauncher()) return
         mutex.withLock {
             pendingWatchNext = progress
             if (isPlaybackActive.value) return@withLock
@@ -167,6 +178,8 @@ class TvRecommendationManager @Inject constructor(
                 return@withContext
             }
             try {
+                // The active profile may have changed while this update was deferred.
+                if (isHiddenFromLauncher()) return@withContext
                 val decorated = progress.withCustomPosterArt(recommendationPosterPattern())
                 val id = programBuilder.watchNextId(decorated)
                 val newFingerprint = ProgramFingerprint(
@@ -223,6 +236,10 @@ class TvRecommendationManager @Inject constructor(
             }
         }
     }
+
+    private suspend fun isHiddenFromLauncher(): Boolean =
+        runCatching { profileManager.isLauncherContinueWatchingHiddenForActiveProfile() }
+            .getOrDefault(false)
 
     private fun isTvDevice(): Boolean =
         context.packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK)

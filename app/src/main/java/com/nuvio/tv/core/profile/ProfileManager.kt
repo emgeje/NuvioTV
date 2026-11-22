@@ -10,7 +10,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -55,6 +58,20 @@ class ProfileManager @Inject constructor(
         .stateIn(scope, SharingStarted.Eagerly, listOf(
             UserProfile(id = 1, name = context.getString(R.string.profile_default_name, 1), avatarColorHex = "#1E88E5")
         ))
+
+    /**
+     * Whether the active profile opted out of the system launcher's Continue Watching / Watch Next
+     * row. Reads the persisted store directly so callers never act on a not-yet-loaded default.
+     */
+    val activeProfileHidesLauncherContinueWatching: Flow<Boolean> = combine(
+        profileDataStore.profilesList,
+        profileDataStore.activeProfileId
+    ) { list, activeId ->
+        list.find { it.id == activeId }?.hideFromLauncherContinueWatching == true
+    }.distinctUntilChanged()
+
+    suspend fun isLauncherContinueWatchingHiddenForActiveProfile(): Boolean =
+        activeProfileHidesLauncherContinueWatching.first()
 
     val activeProfile: UserProfile?
         get() = profiles.value.find { it.id == activeProfileId.value }

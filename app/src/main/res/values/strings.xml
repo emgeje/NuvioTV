@@ -1710,6 +1710,8 @@
     <string name="profile_plugins">plugins</string>
     <string name="profile_choose_avatar">Choose Avatar</string>
     <string name="profile_custom_avatar_web_panel_note">Custom avatar URLs can be configured from the Nuvio web panel.</string>
+    <string name="profile_hide_from_launcher_title">Hide from launcher</string>
+    <string name="profile_hide_from_launcher_subtitle">Don\'t show this profile\'s Continue Watching on the TV home screen (Google TV, Android TV, Projectivy…)</string>
     <string name="profile_editor_tab_avatar">Avatar</string>
     <string name="profile_editor_tab_background">Background</string>
     <string name="profile_choose_background">Choose Profile Background</string>

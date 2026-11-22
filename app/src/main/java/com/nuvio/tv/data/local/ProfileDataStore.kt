@@ -125,7 +125,10 @@ class ProfileDataStore @Inject constructor(
 
     suspend fun replaceAllProfiles(profiles: List<UserProfile>) {
         dataStore.edit { prefs ->
-            val normalizedProfiles = normalizeProfiles(profiles)
+            val normalizedProfiles = mergeDeviceLocalProfileFlags(
+                incoming = normalizeProfiles(profiles),
+                local = parseProfiles(prefs[profilesJsonKey])
+            )
             prefs[profilesJsonKey] = serializeProfiles(normalizedProfiles)
             val activeId = prefs[activeProfileIdKey] ?: 1
             if (normalizedProfiles.none { it.id == activeId }) {
@@ -169,6 +172,22 @@ class ProfileDataStore @Inject constructor(
     }
 }
 
+/**
+ * Profile lists pulled from the account do not carry device-local flags (such as hiding a profile
+ * from the launcher's Continue Watching row), so keep the values this device already has for
+ * profiles that still exist.
+ */
+internal fun mergeDeviceLocalProfileFlags(
+    incoming: List<UserProfile>,
+    local: List<UserProfile>
+): List<UserProfile> {
+    val localById = local.associateBy { it.id }
+    return incoming.map { profile ->
+        val existing = localById[profile.id] ?: return@map profile
+        profile.copy(hideFromLauncherContinueWatching = existing.hideFromLauncherContinueWatching)
+    }
+}
+
 @com.squareup.moshi.JsonClass(generateAdapter = true)
 internal data class ProfileJson(
     val id: Int,
@@ -179,7 +198,8 @@ internal data class ProfileJson(
     val avatarId: String? = null,
     val avatarUrl: String? = null,
     val profileBackgroundId: String? = null,
-    val profileBackgroundUrl: String? = null
+    val profileBackgroundUrl: String? = null,
+    val hideFromLauncherContinueWatching: Boolean = false
 ) {
     fun toDomain() = UserProfile(
         id = id,
@@ -190,7 +210,8 @@ internal data class ProfileJson(
         avatarId = avatarId,
         avatarUrl = avatarUrl,
         profileBackgroundId = profileBackgroundId,
-        profileBackgroundUrl = profileBackgroundUrl
+        profileBackgroundUrl = profileBackgroundUrl,
+        hideFromLauncherContinueWatching = hideFromLauncherContinueWatching
     )
 
     companion object {
@@ -203,7 +224,8 @@ internal data class ProfileJson(
             avatarId = profile.avatarId,
             avatarUrl = profile.avatarUrl,
             profileBackgroundId = profile.profileBackgroundId,
-            profileBackgroundUrl = profile.profileBackgroundUrl
+            profileBackgroundUrl = profile.profileBackgroundUrl,
+            hideFromLauncherContinueWatching = profile.hideFromLauncherContinueWatching
         )
     }
 }
