@@ -16,6 +16,16 @@ internal fun PlayerRuntimeController.buildMediaSessionMetadata(): MediaMetadata 
     val state = _uiState.value
     val isSeries = contentType?.lowercase() in listOf("series", "tv")
 
+    // Profiles hidden from the launcher expose no title or artwork to system surfaces.
+    if (isHiddenFromLauncher()) {
+        return MediaMetadata.Builder()
+            .setMediaType(
+                if (isSeries) MediaMetadata.MEDIA_TYPE_TV_SHOW
+                else MediaMetadata.MEDIA_TYPE_MOVIE
+            )
+            .build()
+    }
+
     // Title: for series use the show name, for movies use the main title.
     val displayTitle = state.contentName?.takeIf { it.isNotBlank() } ?: state.title
 
@@ -106,8 +116,17 @@ internal fun PlayerRuntimeController.releaseMediaSession() {
     mpvMediaSessionPlayer = null
 }
 
+/**
+ * True when the playing profile opted out of the launcher's Continue Watching. Such profiles
+ * advertise no MediaSession, so launchers (Google TV, Monet, Projectivy, ...) show no
+ * "Now playing" card for them.
+ */
+internal fun PlayerRuntimeController.isHiddenFromLauncher(): Boolean =
+    runCatching { tvRecommendationManager.isProfileHiddenFromLauncher(profileId) }.getOrDefault(false)
+
 internal fun PlayerRuntimeController.installExoMediaSession(player: ExoPlayer) {
     releaseMediaSession()
+    if (isHiddenFromLauncher()) return
     if (player.canAdvertiseSession()) {
         currentMediaSession = MediaSession.Builder(context, SafeMediaSessionPlayer(player)).build()
         updateMediaSessionMetadata()
@@ -118,6 +137,10 @@ internal fun PlayerRuntimeController.installExoMediaSession(player: ExoPlayer) {
 internal fun PlayerRuntimeController.installMpvMediaSession() {
     runCatching {
         if (!isUsingMpvEngine() || isInBackground || mpvView == null || currentStreamUrl.isBlank()) return
+        if (isHiddenFromLauncher()) {
+            releaseMediaSession()
+            return
+        }
         if (currentMediaSession != null && mpvMediaSessionPlayer != null) {
             mpvMediaSessionPlayer?.refresh()
             return

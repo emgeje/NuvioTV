@@ -237,6 +237,13 @@ class TvRecommendationManager @Inject constructor(
         }
     }
 
+    /**
+     * Synchronous check for the player: a profile hidden from the launcher must not advertise a
+     * MediaSession either, because launchers turn it into a "Now playing" card with the artwork.
+     */
+    fun isProfileHiddenFromLauncher(profileId: Int): Boolean =
+        profileManager.profiles.value.find { it.id == profileId }?.hideFromLauncherContinueWatching == true
+
     private suspend fun isHiddenFromLauncher(): Boolean =
         runCatching { profileManager.isLauncherContinueWatchingHiddenForActiveProfile() }
             .getOrDefault(false)
