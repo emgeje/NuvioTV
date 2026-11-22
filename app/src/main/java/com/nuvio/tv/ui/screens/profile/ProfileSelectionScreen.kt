@@ -28,6 +28,8 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.toggleableState
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
@@ -111,6 +113,8 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.tv.material3.Button
 import androidx.tv.material3.ButtonDefaults
+import androidx.tv.material3.Switch
+import androidx.tv.material3.SwitchDefaults
 import androidx.tv.material3.Text
 import androidx.compose.ui.res.stringResource
 import com.nuvio.tv.R
@@ -1792,6 +1796,9 @@ internal fun EditProfileOverlay(
     var selectedBackgroundUrl by remember(profile.id, profile.profileBackgroundUrl) {
         mutableStateOf(profile.profileBackgroundUrl?.takeIf { it.isNotBlank() })
     }
+    var hideFromLauncher by remember(profile.id) {
+        mutableStateOf(profile.hideFromLauncherContinueWatching)
+    }
     var selectedEditorTab by remember(profile.id) { mutableStateOf(ProfileEditorTab.Avatar) }
     var focusedAvatarName by remember { mutableStateOf<String?>(null) }
     val selectedAvatar = remember(avatarCatalog, selectedAvatarId) {
@@ -1806,6 +1813,7 @@ internal fun EditProfileOverlay(
     }
     val nameFocusRequester = remember { FocusRequester() }
     val cancelFocusRequester = remember { FocusRequester() }
+    val launcherToggleFocusRequester = remember { FocusRequester() }
     val avatarFocusRequester = remember { FocusRequester() }
     var leftPanelFocusRequester by remember { mutableStateOf(nameFocusRequester) }
 
@@ -1887,7 +1895,8 @@ internal fun EditProfileOverlay(
                                 avatarId = selectedAvatarId,
                                 avatarUrl = if (hasChangedAvatarSelection) null else profile.avatarUrl,
                                 profileBackgroundId = selectedBackgroundId,
-                                profileBackgroundUrl = selectedBackgroundUrl
+                                profileBackgroundUrl = selectedBackgroundUrl,
+                                hideFromLauncherContinueWatching = hideFromLauncher
                             )
                         )
                     }
@@ -1937,6 +1946,22 @@ internal fun EditProfileOverlay(
                             selectedEditorTab == ProfileEditorTab.Avatar && avatarCatalog.isNotEmpty()
                         },
                         onFocused = { leftPanelFocusRequester = nameFocusRequester }
+                    )
+
+                    LauncherVisibilityToggle(
+                        hidden = hideFromLauncher,
+                        onToggle = { hideFromLauncher = !hideFromLauncher },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .focusRequester(launcherToggleFocusRequester)
+                            .focusProperties {
+                                if (selectedEditorTab == ProfileEditorTab.Avatar && avatarCatalog.isNotEmpty()) {
+                                    end = avatarFocusRequester
+                                }
+                            }
+                            .onFocusChanged {
+                                if (it.isFocused) leftPanelFocusRequester = launcherToggleFocusRequester
+                            }
                     )
 
                     OverlayButton(
@@ -2105,6 +2130,91 @@ internal fun EditProfileOverlay(
 
             Spacer(modifier = Modifier.height(NuvioTheme.spacing.xl))
         }
+    }
+}
+
+/**
+ * Per-profile switch that keeps this profile's Continue Watching off the system launcher
+ * (Google TV / Android TV home, Projectivy, ...). Shown as "on" when the profile is hidden.
+ */
+@Composable
+private fun LauncherVisibilityToggle(
+    hidden: Boolean,
+    onToggle: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var isFocused by remember { mutableStateOf(false) }
+    val interactionSource = remember { MutableInteractionSource() }
+    val bgColor by animateColorAsState(
+        targetValue = if (isFocused) NuvioTheme.colors.FocusBackground else Color.White.copy(alpha = 0.06f),
+        animationSpec = tween(120),
+        label = "launcherToggleBg"
+    )
+    val shape = RoundedCornerShape(NuvioTheme.radii.md)
+
+    Row(
+        modifier = modifier
+            .clip(shape)
+            .background(bgColor)
+            .border(
+                border = if (isFocused) {
+                    NuvioTheme.focusRing.border(NuvioTheme.spacing.xxs)
+                } else {
+                    BorderStroke(NuvioTheme.spacing.hairline, NuvioTheme.colors.Border)
+                },
+                shape = shape
+            )
+            .onFocusChanged { isFocused = it.isFocused }
+            .focusable(interactionSource = interactionSource)
+            .onPreviewKeyEvent { event ->
+                val native = event.nativeKeyEvent
+                if (native.action == AndroidKeyEvent.ACTION_UP && isProfileSelectKey(native.keyCode)) {
+                    onToggle()
+                    true
+                } else {
+                    false
+                }
+            }
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onToggle
+            )
+            .semantics {
+                role = Role.Switch
+                toggleableState = if (hidden) ToggleableState.On else ToggleableState.Off
+            }
+            .padding(horizontal = NuvioTheme.spacing.md, vertical = NuvioTheme.spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(NuvioTheme.spacing.sm)
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = stringResource(R.string.profile_hide_from_launcher_title),
+                color = if (isFocused) NuvioTheme.colors.FocusContent else NuvioTheme.colors.TextPrimary,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = stringResource(R.string.profile_hide_from_launcher_subtitle),
+                color = NuvioTheme.colors.TextSecondary,
+                fontSize = 11.sp,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        Switch(
+            checked = hidden,
+            onCheckedChange = null,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = NuvioTheme.colors.Secondary,
+                checkedTrackColor = NuvioTheme.colors.Secondary.copy(alpha = 0.3f),
+                uncheckedThumbColor = NuvioTheme.colors.TextSecondary,
+                uncheckedTrackColor = NuvioTheme.colors.BackgroundCard
+            )
+        )
     }
 }
 

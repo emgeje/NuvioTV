@@ -1637,6 +1637,8 @@
     <string name="profile_plugins">beépülő modulok</string>
     <string name="profile_choose_avatar">Avatar választása</string>
     <string name="profile_custom_avatar_web_panel_note">Az egyedi avatar URL-ek a Nuvio webes felületén konfigurálhatók.</string>
+    <string name="profile_hide_from_launcher_title">Rejtés a kezdőképernyőről</string>
+    <string name="profile_hide_from_launcher_subtitle">Ennek a profilnak a „Nézés folytatása” elemei nem jelennek meg a TV kezdőképernyőjén (Google TV, Android TV, Projectivy…)</string>
     <string name="profile_editor_tab_avatar">Avatar</string>
     <string name="profile_editor_tab_background">Háttér</string>
     <string name="profile_choose_background">Profil hátterének választása</string>

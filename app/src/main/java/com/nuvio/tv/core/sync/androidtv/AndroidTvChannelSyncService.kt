@@ -5,6 +5,7 @@ import android.util.Log
 import com.nuvio.tv.core.poster.CustomPosterScreen
 import com.nuvio.tv.core.poster.patternForScreen
 import com.nuvio.tv.core.poster.withCustomPosterArt
+import com.nuvio.tv.core.profile.ProfileManager
 import com.nuvio.tv.core.recommendations.TvRecommendationManager
 import com.nuvio.tv.data.local.CachedInProgressItem
 import com.nuvio.tv.data.local.CachedNextUpItem
@@ -48,7 +49,8 @@ class AndroidTvChannelSyncService @Inject constructor(
     private val cwEnrichmentCache: ContinueWatchingEnrichmentCache,
     private val layoutPreferenceDataStore: LayoutPreferenceDataStore,
     private val traktSettingsDataStore: TraktSettingsDataStore,
-    private val tvRecommendationManager: TvRecommendationManager
+    private val tvRecommendationManager: TvRecommendationManager,
+    private val profileManager: ProfileManager
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -86,9 +88,10 @@ class AndroidTvChannelSyncService @Inject constructor(
                     .dropWhile { it == 0 },
                 traktSettingsDataStore.continueWatchingDaysCap,
                 traktSettingsDataStore.dismissedNextUpKeys,
-                layoutPreferenceDataStore.useEpisodeThumbnailsInCw
-            ) { _, daysCap, dismissed, useEpisodeThumbnails ->
-                ChannelSettingsSnapshot(daysCap, dismissed, useEpisodeThumbnails)
+                layoutPreferenceDataStore.useEpisodeThumbnailsInCw,
+                profileManager.activeProfileHidesLauncherContinueWatching
+            ) { _, daysCap, dismissed, useEpisodeThumbnails, hidden ->
+                ChannelSettingsSnapshot(daysCap, dismissed, useEpisodeThumbnails, hidden)
             }
                 .debounce(DEBOUNCE_MS)
                 .collect { settings ->
@@ -111,7 +114,17 @@ class AndroidTvChannelSyncService @Inject constructor(
             val daysCap = traktSettingsDataStore.continueWatchingDaysCap.first()
             val dismissed = traktSettingsDataStore.dismissedNextUpKeys.first()
             val useEpisodeThumbnails = layoutPreferenceDataStore.useEpisodeThumbnailsInCw.first()
-            ChannelSettingsSnapshot(daysCap, dismissed, useEpisodeThumbnails)
+            val hidden = profileManager.isLauncherContinueWatchingHiddenForActiveProfile()
+            ChannelSettingsSnapshot(daysCap, dismissed, useEpisodeThumbnails, hidden)
+        }
+
+        if (resolvedSettings.hiddenFromLauncher) {
+            // The active profile opted out: empty the channel and Watch Next row so nothing
+            // from it (or left over from a previous profile) shows on the launcher home screen.
+            Log.d(TAG, "Active profile is hidden from launcher; clearing channel")
+            manager.reconcile(emptyList())
+            runCatching { tvRecommendationManager.updateWatchNext(emptyList()) }
+            return
         }
 
         val inProgressItems = runCatching { cwEnrichmentCache.getInProgressSnapshot() }
@@ -207,7 +220,8 @@ class AndroidTvChannelSyncService @Inject constructor(
     data class ChannelSettingsSnapshot(
         val daysCap: Int,
         val dismissedNextUp: Set<String>,
-        val useEpisodeThumbnails: Boolean
+        val useEpisodeThumbnails: Boolean,
+        val hiddenFromLauncher: Boolean = false
     )
 }
 
